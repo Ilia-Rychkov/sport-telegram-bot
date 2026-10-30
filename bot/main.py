@@ -3,6 +3,11 @@ import logging
 import os
 from pathlib import Path
 
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.storage.memory import SimpleEventIsolation
+
+from bot.handlers.profile import router as profile_router
+
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import CommandStart
 from aiogram.types import (
@@ -35,18 +40,19 @@ main_menu = ReplyKeyboardMarkup(
 
 
 @router.message(CommandStart())
-async def start(message: Message):
+async def start(message: Message, state: FSMContext):
+    data = await state.get_data()
+    profile = data.get("profile")
+
+    await state.clear()
+
+    if profile is not None:
+        await state.update_data(profile=profile)
+
     await message.answer(
         "Привет! Я помогу следить за питанием, тренировками "
         "и прогрессом.\nВыбери раздел в меню:",
         reply_markup=main_menu,
-    )
-
-
-@router.message(F.text.in_({"Мой профиль", "Питание", "Тренировки", "Прогресс"}))
-async def open_section(message: Message):
-    await message.answer(
-        f"Раздел «{message.text}» пока в разработке."
     )
 
 
@@ -61,9 +67,9 @@ async def help_message(message: Message):
 @router.message()
 async def unknown_message(message: Message):
     await message.answer(
-        "Не понимаю эту команду или сообщение. "
-        "Выбери раздел в меню или отправь /start.",
-        reply_markup=main_menu,
+        "Не понимаю эту команду или сообщение.\n"
+        "/start — главное меню\n"
+        "/cancel — отменить заполнение анкеты"
     )
 
 
@@ -99,7 +105,11 @@ async def main():
     if not token:
         raise RuntimeError("Добавь BOT_TOKEN в файл .env")
 
-    dispatcher = Dispatcher()
+    dispatcher = Dispatcher(
+    events_isolation=SimpleEventIsolation()
+)
+
+    dispatcher.include_router(profile_router)
     dispatcher.include_router(router)
 
     async with Bot(token=token) as bot:
