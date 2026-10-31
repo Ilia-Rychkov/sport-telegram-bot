@@ -1,3 +1,5 @@
+from backend.services.profile_service import recalculate_profile_norms
+
 from math import isfinite
 
 from aiogram import F, Router
@@ -137,23 +139,43 @@ async def open_profile(message: Message, state: FSMContext):
     )
     await ask_field(message, state, "age")
 
-
 @router.message(ProfileForm.confirmation, F.text == "Подтвердить")
 async def confirm_profile(message: Message, state: FSMContext):
     data = await state.get_data()
-
-    # Подтверждённые данные отделены от редактируемого черновика.
     profile = data["draft"].copy()
 
-    await state.clear()
-    await state.update_data(profile=profile)
+    # 1. НОВОЕ: Считаем нормы на основе данных из черновика
+    norms = recalculate_profile_norms(profile)
 
-    await message.answer(
-        "Данные подтверждены!\n"
-        "Для просмотра и изменения открой «Мой профиль».\n"
-        "Вернуться в главное меню: /start.",
-        reply_markup=ReplyKeyboardRemove(),
-    )
+    # 2. Очищаем состояние и сохраняем профиль (как было)
+    await state.clear()
+
+    if norms:
+        # 3. Если расчет успешен, добавляем нормы в профиль
+        profile["norms"] = norms
+        await state.update_data(profile=profile)
+
+        # Формируем текст с предупреждением (если оно есть)
+        warning_text = f"\n\n⚠️ {norms['metadata']['warning']}" if norms['metadata'].get('warning') else ""
+
+        # 4. Отправляем пользователю красивое сообщение с цифрами
+        await message.answer(
+            f"✅ Данные подтверждены!\n\n"
+            f"Твоя норма: {norms['calories']} ккал\n"
+            f"БЖУ: {norms['protein']} / {norms['fat']} / {norms['carbs']} г{warning_text}\n\n"
+            f"Для просмотра и изменения открой «Мой профиль».\n"
+            f"Вернуться в главное меню: /start.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+    else:
+        # 5. Если калькулятор упал (например, ошибка в данных), не теряем профиль
+        await state.update_data(profile=profile)
+        await message.answer(
+            "Данные подтверждены!\n"
+            "Но не удалось рассчитать нормы калорий. Попробуйте изменить данные позже.\n"
+            "Вернуться в главное меню: /start.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
 
 
 @router.message(ProfileForm.confirmation, F.text == "Изменить данные")
