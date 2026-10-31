@@ -91,12 +91,22 @@ async def show_summary(message: Message, state: FSMContext):
 
         lines.append(f"{title}: {value}")
 
+    # НОВОЕ: Если в профиле уже есть рассчитанные нормы, показываем их
+    profile = data.get("profile")
+    if profile and "norms" in profile:
+        norms = profile["norms"]
+        lines.append("\n📊 **Твоя суточная норма:**")
+        lines.append(f"🔥 Калории: {norms['calories']} ккал")
+        lines.append(f"🥩 БЖУ: {norms['protein']} / {norms['fat']} / {norms['carbs']} г")
+
+        if norms.get("metadata", {}).get("warning"):
+            lines.append(f"\n⚠️ {norms['metadata']['warning']}")
+
     await state.set_state(ProfileForm.confirmation)
     await message.answer(
         "\n".join(lines),
-        reply_markup=make_keyboard(
-            ("Подтвердить", "Изменить данные", "Отмена")
-        ),
+        reply_markup=make_keyboard(("Подтвердить", "Изменить данные", "Отмена")),
+        parse_mode="Markdown"  # Добавили, чтобы жирный шрифт работал
     )
 
 
