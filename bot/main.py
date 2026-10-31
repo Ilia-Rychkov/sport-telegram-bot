@@ -7,6 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import SimpleEventIsolation
 
 from bot.handlers.profile import router as profile_router
+from bot.handlers.nutrition import router as nutrition_router
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import CommandStart
@@ -110,6 +111,7 @@ async def main():
 )
 
     dispatcher.include_router(profile_router)
+    dispatcher.include_router(nutrition_router)
     dispatcher.include_router(router)
 
     async with Bot(token=token) as bot:
