@@ -96,3 +96,27 @@ class WorkoutExercise(SQLModel, table=True):
     sets: int = Field(ge=1)
     repetitions: int = Field(ge=1)
     rest_seconds: int = Field(default=60, ge=0)
+
+
+class WorkoutSession(SQLModel, table=True):
+    __tablename__ = "workout_sessions"
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id")
+    workout_id: int | None = Field(default=None, foreign_key="workouts.id")
+
+    date: datetime = Field(default_factory=current_time)
+    notes: str = ""
+
+
+class ExerciseResult(SQLModel, table=True):
+    __tablename__ = "exercise_results"
+
+    id: int | None = Field(default=None, primary_key=True)
+    session_id: int = Field(foreign_key="workout_sessions.id")
+    exercise_id: int = Field(foreign_key="exercises.id")
+
+    # Фактические данные (то, что пользователь реально поднял)
+    weight_kg: float = Field(ge=0)
+    sets: int = Field(ge=1)
+    reps: int = Field(ge=1)

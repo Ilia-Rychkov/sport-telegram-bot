@@ -8,6 +8,8 @@ from aiogram.fsm.storage.memory import SimpleEventIsolation
 
 from bot.handlers.profile import router as profile_router
 from bot.handlers.nutrition import router as nutrition_router
+from bot.handlers.workout_record import router as workout_record_router
+from bot.handlers.progress import router as progress_router
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import CommandStart
@@ -112,6 +114,8 @@ async def main():
 
     dispatcher.include_router(profile_router)
     dispatcher.include_router(nutrition_router)
+    dispatcher.include_router(workout_record_router)
+    dispatcher.include_router(progress_router)
     dispatcher.include_router(router)
 
     async with Bot(token=token) as bot:
