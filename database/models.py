@@ -96,3 +96,11 @@ class WorkoutExercise(SQLModel, table=True):
     sets: int = Field(ge=1)
     repetitions: int = Field(ge=1)
     rest_seconds: int = Field(default=60, ge=0)
+class ProfileData(SQLModel):
+    sex: Sex
+    age: int = Field(ge=18, le=100)
+    weight: float = Field(ge=30, le=350)
+    height: float = Field(ge=100, le=250)
+    activity: ActivityLevel
+    goal: Goal
+    fitness: FitnessLevel

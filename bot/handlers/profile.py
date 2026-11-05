@@ -6,6 +6,15 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, ReplyKeyboardRemove
 
+import asyncio
+import logging
+
+from pydantic import ValidationError
+from sqlalchemy.exc import SQLAlchemyError
+
+from database.models import ProfileData
+from database.profiles import get_profile, save_profile
+
 from bot.keyboards.profile import (
     ACTIVITY_OPTIONS,
     FITNESS_OPTIONS,
@@ -101,14 +110,7 @@ async def show_summary(message: Message, state: FSMContext):
 @router.message(Command("cancel"))
 @router.message(F.text == "Отмена")
 async def cancel_profile(message: Message, state: FSMContext):
-    # Удаляем черновик, сохраняя ранее подтверждённый профиль.
-    data = await state.get_data()
-    profile = data.get("profile")
-
     await state.clear()
-
-    if profile is not None:
-        await state.update_data(profile=profile)
 
     await message.answer(
         "Заполнение отменено. Отправь /start, чтобы открыть меню.",
@@ -118,12 +120,35 @@ async def cancel_profile(message: Message, state: FSMContext):
 
 @router.message(F.text == "Мой профиль")
 async def open_profile(message: Message, state: FSMContext):
-    data = await state.get_data()
-    profile = data.get("profile")
+    if message.from_user is None:
+        return
+
+    try:
+        profile = await asyncio.to_thread(
+            get_profile,
+            message.from_user.id,
+        )
+    except SQLAlchemyError:
+        logging.exception("Не удалось получить профиль")
+        await message.answer(
+            "Не удалось загрузить профиль. Попробуй позже."
+        )
+        return
+
+    await state.clear()
 
     if profile is not None:
+        draft = {
+            field: getattr(profile, field)
+            for field in FIELD_ORDER
+        }
+
+        # Превращаем Enum в строки для отображения в анкете.
+        for field in OPTIONS:
+            draft[field] = draft[field].value
+
         await state.update_data(
-            draft=profile.copy(),
+            draft=draft,
             editing_field=None,
         )
         await show_summary(message, state)
@@ -131,25 +156,47 @@ async def open_profile(message: Message, state: FSMContext):
 
     await state.update_data(draft={}, editing_field=None)
     await message.answer(
-        "Заполним анкету. В этой версии анкета доступна "
-        "для пользователей от 18 до 100 лет.\n"
+        "Заполним анкету. Анкета доступна пользователям "
+        "от 18 до 100 лет.\n"
         "Отменить заполнение можно командой /cancel."
     )
     await ask_field(message, state, "age")
 
-
 @router.message(ProfileForm.confirmation, F.text == "Подтвердить")
 async def confirm_profile(message: Message, state: FSMContext):
+    if message.from_user is None:
+        return
+
     data = await state.get_data()
 
-    # Подтверждённые данные отделены от редактируемого черновика.
-    profile = data["draft"].copy()
+    try:
+        profile_data = ProfileData.model_validate(data["draft"])
+    except ValidationError:
+        await message.answer(
+            "В анкете есть некорректные данные. "
+            "Нажми «Изменить данные» и проверь значения."
+        )
+        return
+
+    try:
+        await asyncio.to_thread(
+            save_profile,
+            message.from_user.id,
+            profile_data,
+        )
+    except SQLAlchemyError:
+        logging.exception("Не удалось сохранить профиль")
+        await message.answer(
+            "Не удалось сохранить профиль. "
+            "Данные анкеты сохранены в черновике. "
+            "Попробуй нажать «Подтвердить» ещё раз."
+        )
+        return
 
     await state.clear()
-    await state.update_data(profile=profile)
 
     await message.answer(
-        "Данные подтверждены!\n"
+        "Профиль сохранён!\n"
         "Для просмотра и изменения открой «Мой профиль».\n"
         "Вернуться в главное меню: /start.",
         reply_markup=ReplyKeyboardRemove(),
