@@ -1,3 +1,6 @@
+from bot.keyboards.main_menu import main_menu
+import asyncio
+import logging
 from math import isfinite
 
 from aiogram import F, Router
@@ -5,16 +8,10 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, ReplyKeyboardRemove
-
-import asyncio
-import logging
-
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
-from database.models import ProfileData
-from database.profiles import get_profile, save_profile
-
+from backend.services.profile_service import recalculate_profile_norms
 from bot.keyboards.profile import (
     ACTIVITY_OPTIONS,
     FITNESS_OPTIONS,
@@ -22,8 +19,11 @@ from bot.keyboards.profile import (
     SEX_OPTIONS,
     make_keyboard,
 )
+from database.models import ProfileData
+from database.profiles import get_profile, save_profile
 
 
+logger = logging.getLogger(__name__)
 router = Router()
 
 
@@ -39,7 +39,6 @@ class ProfileForm(StatesGroup):
     editing = State()
 
 
-# Порядок заполнения, названия полей и вопросы.
 FIELDS = {
     "age": ("Возраст", "Сколько тебе лет? Введи целое число."),
     "sex": ("Пол", "Выбери пол:"),
@@ -57,7 +56,6 @@ OPTIONS = {
     "fitness": FITNESS_OPTIONS,
 }
 
-# Это ограничения ввода для первой версии проекта.
 NUMBER_LIMITS = {
     "age": (18, 100),
     "height": (100, 250),
@@ -85,7 +83,6 @@ async def ask_field(message: Message, state: FSMContext, field: str):
 async def show_summary(message: Message, state: FSMContext):
     data = await state.get_data()
     draft = data["draft"]
-
     lines = ["Проверь данные:\n"]
 
     for field, (title, question) in FIELDS.items():
@@ -98,12 +95,30 @@ async def show_summary(message: Message, state: FSMContext):
 
         lines.append(f"{title}: {value}")
 
+    # Считаем нормы по текущим данным, включая изменения.
+    norms = recalculate_profile_norms(draft)
+
+    if norms is not None:
+        lines.append("\nТвоя суточная норма:")
+        lines.append(f"Калории: {norms['calories']} ккал")
+        lines.append(
+            f"БЖУ: {norms['protein']} / "
+            f"{norms['fat']} / {norms['carbs']} г"
+        )
+
+        warning = norms.get("metadata", {}).get("warning")
+        if warning:
+            lines.append(f"\n⚠️ {warning}")
+    else:
+        lines.append("\nНе удалось рассчитать нормы калорий.")
+
     await state.set_state(ProfileForm.confirmation)
     await message.answer(
         "\n".join(lines),
         reply_markup=make_keyboard(
             ("Подтвердить", "Изменить данные", "Отмена")
         ),
+        parse_mode=None,
     )
 
 
@@ -113,8 +128,8 @@ async def cancel_profile(message: Message, state: FSMContext):
     await state.clear()
 
     await message.answer(
-        "Заполнение отменено. Отправь /start, чтобы открыть меню.",
-        reply_markup=ReplyKeyboardRemove(),
+        "Заполнение отменено. Выбери раздел в меню.",
+        reply_markup=main_menu,
     )
 
 
@@ -129,7 +144,7 @@ async def open_profile(message: Message, state: FSMContext):
             message.from_user.id,
         )
     except SQLAlchemyError:
-        logging.exception("Не удалось получить профиль")
+        logger.exception("Не удалось получить профиль")
         await message.answer(
             "Не удалось загрузить профиль. Попробуй позже."
         )
@@ -138,14 +153,10 @@ async def open_profile(message: Message, state: FSMContext):
     await state.clear()
 
     if profile is not None:
-        draft = {
-            field: getattr(profile, field)
-            for field in FIELD_ORDER
-        }
-
-        # Превращаем Enum в строки для отображения в анкете.
-        for field in OPTIONS:
-            draft[field] = draft[field].value
+        draft = profile.model_dump(
+            mode="json",
+            include=set(FIELD_ORDER),
+        )
 
         await state.update_data(
             draft=draft,
@@ -162,6 +173,7 @@ async def open_profile(message: Message, state: FSMContext):
     )
     await ask_field(message, state, "age")
 
+
 @router.message(ProfileForm.confirmation, F.text == "Подтвердить")
 async def confirm_profile(message: Message, state: FSMContext):
     if message.from_user is None:
@@ -170,7 +182,9 @@ async def confirm_profile(message: Message, state: FSMContext):
     data = await state.get_data()
 
     try:
-        profile_data = ProfileData.model_validate(data["draft"])
+        profile_data = ProfileData.model_validate(
+            data.get("draft", {})
+        )
     except ValidationError:
         await message.answer(
             "В анкете есть некорректные данные. "
@@ -185,21 +199,43 @@ async def confirm_profile(message: Message, state: FSMContext):
             profile_data,
         )
     except SQLAlchemyError:
-        logging.exception("Не удалось сохранить профиль")
+        logger.exception("Не удалось сохранить профиль")
         await message.answer(
             "Не удалось сохранить профиль. "
-            "Данные анкеты сохранены в черновике. "
-            "Попробуй нажать «Подтвердить» ещё раз."
+            "Черновик остался — попробуй подтвердить ещё раз."
         )
         return
 
+    profile = profile_data.model_dump(mode="json")
+    norms = recalculate_profile_norms(profile)
+
+    if norms is not None:
+        profile["norms"] = norms
+
     await state.clear()
+    await state.update_data(profile=profile)
+
+    text = "Профиль сохранён!\n"
+
+    if norms is not None:
+        text += (
+            f"\nТвоя норма: {norms['calories']} ккал\n"
+            f"БЖУ: {norms['protein']} / "
+            f"{norms['fat']} / {norms['carbs']} г\n"
+        )
+
+        warning = norms.get("metadata", {}).get("warning")
+        if warning:
+            text += f"\n⚠️ {warning}\n"
+    else:
+        text += "\nНе удалось рассчитать нормы калорий.\n"
+
+        text += "\nВыбери раздел в главном меню."
 
     await message.answer(
-        "Профиль сохранён!\n"
-        "Для просмотра и изменения открой «Мой профиль».\n"
-        "Вернуться в главное меню: /start.",
-        reply_markup=ReplyKeyboardRemove(),
+        text,
+        reply_markup=main_menu,
+        parse_mode=None,
     )
 
 
@@ -227,43 +263,19 @@ async def edit_field(message: Message, state: FSMContext):
     await message.answer("Выбери поле с помощью кнопок.")
 
 
-@router.message(
-    ProfileForm.age,
-    F.text,
-    ~F.text.startswith("/"),
-)
-@router.message(
-    ProfileForm.sex,
-    F.text,
-    ~F.text.startswith("/"),
-)
-@router.message(
-    ProfileForm.height,
-    F.text,
-    ~F.text.startswith("/"),
-)
-@router.message(
-    ProfileForm.weight,
-    F.text,
-    ~F.text.startswith("/"),
-)
-@router.message(
-    ProfileForm.activity,
-    F.text,
-    ~F.text.startswith("/"),
-)
-@router.message(
-    ProfileForm.goal,
-    F.text,
-    ~F.text.startswith("/"),
-)
-@router.message(
-    ProfileForm.fitness,
-    F.text,
-    ~F.text.startswith("/"),
-)
+@router.message(ProfileForm.age, F.text, ~F.text.startswith("/"))
+@router.message(ProfileForm.sex, F.text, ~F.text.startswith("/"))
+@router.message(ProfileForm.height, F.text, ~F.text.startswith("/"))
+@router.message(ProfileForm.weight, F.text, ~F.text.startswith("/"))
+@router.message(ProfileForm.activity, F.text, ~F.text.startswith("/"))
+@router.message(ProfileForm.goal, F.text, ~F.text.startswith("/"))
+@router.message(ProfileForm.fitness, F.text, ~F.text.startswith("/"))
 async def receive_answer(message: Message, state: FSMContext):
     current_state = await state.get_state()
+
+    if current_state is None or message.text is None:
+        return
+
     field = current_state.split(":")[-1]
     text = message.text.strip()
 
@@ -298,7 +310,6 @@ async def receive_answer(message: Message, state: FSMContext):
     data = await state.get_data()
     draft = data["draft"].copy()
     draft[field] = value
-
     await state.update_data(draft=draft)
 
     if data.get("editing_field") is not None:
@@ -314,12 +325,7 @@ async def receive_answer(message: Message, state: FSMContext):
         await show_summary(message, state)
 
 
-# Этот обработчик находится после остальных обработчиков анкеты.
-# Он ловит фото, стикеры и неподходящие ответы на этапе подтверждения.
-@router.message(
-    ProfileForm(),
-    ~F.text.startswith("/"),
-)
+@router.message(ProfileForm(), ~F.text.startswith("/"))
 async def unexpected_answer(message: Message):
     await message.answer(
         "Сейчас заполняем анкету. Ответь на текущий вопрос "
