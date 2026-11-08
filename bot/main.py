@@ -3,10 +3,18 @@ import logging
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import SimpleEventIsolation
 
 from bot.handlers.profile import router as profile_router
+from bot.handlers.nutrition import router as nutrition_router
+from bot.handlers.workout_record import router as workout_record_router
+from bot.handlers.progress import router as progress_router
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import CommandStart
@@ -16,27 +24,11 @@ from aiogram.types import (
     Message,
     ReplyKeyboardMarkup,
 )
-from dotenv import load_dotenv
 
-
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 router = Router()
 
-main_menu = ReplyKeyboardMarkup(
-    keyboard=[
-        [
-            KeyboardButton(text="Мой профиль"),
-            KeyboardButton(text="Питание"),
-        ],
-        [
-            KeyboardButton(text="Тренировки"),
-            KeyboardButton(text="Прогресс"),
-        ],
-        [KeyboardButton(text="Помощь")],
-    ],
-    resize_keyboard=True,
-)
+from bot.keyboards.main_menu import main_menu
 
 
 @router.message(CommandStart())
@@ -110,6 +102,9 @@ async def main():
 )
 
     dispatcher.include_router(profile_router)
+    dispatcher.include_router(nutrition_router)
+    dispatcher.include_router(workout_record_router)
+    dispatcher.include_router(progress_router)
     dispatcher.include_router(router)
 
     async with Bot(token=token) as bot:
