@@ -1,32 +1,37 @@
 import logging
 import json
 from backend.services.interfaces.ai_provider import IAIProvider
+from backend.services.interfaces.workout_parser_service import IWorkoutParserService
 
 logger = logging.getLogger(__name__)
 
 
-class WorkoutParserService:
+class WorkoutParserService(IWorkoutParserService):
     def __init__(self, ai_provider: IAIProvider):
         self.ai = ai_provider
 
-    async def parse_workout(self, user_text: str) -> dict | None:
+    async def parse_workout(self, user_text: str) -> list[dict] | None:
         prompt = f"""
-        Ты — спортивный ассистент-парсер. Извлеки данные о тренировке из текста пользователя.
-        Верни ответ СТРОГО в формате JSON без markdown-разметки.
+        Ты — спортивный ассистент-парсер. Извлеки ВСЕ упражнения из текста пользователя.
+        Верни ответ СТРОГО в формате JSON-массива без markdown-разметки.
 
         ВАЖНЫЕ ПРАВИЛА:
         1. Сленг: "100х5 4п" означает вес 100 кг, 5 повторений, 4 подхода.
         2. Если упражнение с собственным весом (отжимания, подтягивания), weight = null.
-        3. Если в тексте НЕТ конкретного упражнения (например, "потягал железо", "было тяжко", "привет"), 
-           верни СТРОГО {{"exercise": null}}.
+        3. Если в тексте НЕТ конкретных упражнений (например, "потягал железо", "привет"), 
+           верни СТРОГО пустой массив [].
+        4. Изменяй названия на общепринятые или исправляй, если написано с ошибками.
 
-        Формат JSON:
-        {{
-            "exercise": "название упражнения или null",
-            "weight": число или null,
-            "reps": число или null,
-            "sets": число или null
-        }}
+        Формат JSON (массив объектов):
+        [
+            {{
+                "exercise": "название упражнения",
+                "weight": число или null,
+                "reps": число или null,
+                "sets": число или null
+            }},
+            ...
+        ]
 
         Текст пользователя: "{user_text}"
         """
@@ -40,7 +45,6 @@ class WorkoutParserService:
         if not response_text:
             return None
 
-        # Чистим от возможных markdown-тегов
         clean_text = response_text.strip()
         if clean_text.startswith("```json"):
             clean_text = clean_text[7:]
@@ -48,7 +52,12 @@ class WorkoutParserService:
             clean_text = clean_text[:-3]
 
         try:
-            return json.loads(clean_text.strip())
+            data = json.loads(clean_text.strip())
+            if isinstance(data, dict):
+                if data.get("exercise"):
+                    return [data]
+                return []
+            return data
         except json.JSONDecodeError as e:
             logger.error(f"Gemini вернул невалидный JSON: {e}. Ответ был: {response_text}")
             return None

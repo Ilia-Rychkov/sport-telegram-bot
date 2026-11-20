@@ -5,8 +5,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from bot.keyboards.main import get_main_menu_keyboard
 
+from backend.services.interfaces.nutrition_service import INutritionService
 from backend.services.profile_service import ProfileService
-from backend.services.nutrition_service import NutritionService
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -34,7 +34,7 @@ async def generate_and_send_plan(
     message: Message,
     state: FSMContext,
     profile_service: ProfileService,
-    nutrition_service: NutritionService
+    nutrition_service: INutritionService
 ):
     """Основная логика генерации меню. Вызывается из хендлера и из аллергий."""
     telegram_id = message.from_user.id
@@ -121,7 +121,7 @@ async def handle_nutrition(
     message: Message,
     state: FSMContext,
     profile_service: ProfileService,
-    nutrition_service: NutritionService
+    nutrition_service: INutritionService
 ):
     """Хендлер кнопки 'Питание'. Просто вызывает основную логику."""
     await generate_and_send_plan(message, state, profile_service, nutrition_service)
