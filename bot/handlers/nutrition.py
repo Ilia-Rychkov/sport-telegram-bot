@@ -45,6 +45,7 @@ async def generate_and_send_plan(
     # 2. Если профиля нет — запускаем анкету
     if not profile:
         from bot.handlers.profile import ask_field
+        await state.clear()
         await state.update_data(came_from_nutrition=True, draft={}, editing_field=None)
         await message.answer("🍏 Чтобы составить меню, мне нужны твои параметры...")
         await ask_field(message, state, "age")

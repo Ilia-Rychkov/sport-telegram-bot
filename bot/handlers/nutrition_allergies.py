@@ -6,6 +6,8 @@ from aiogram.fsm.state import State, StatesGroup
 
 from backend.services.profile_service import ProfileService
 from backend.services.nutrition_service import NutritionService
+from bot.keyboards.main import get_main_menu_keyboard
+from bot.keyboards.profile import make_keyboard
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -51,8 +53,7 @@ async def no_allergies(
         return
 
     # 2. Обновляем поле аллергий и сохраняем в БД
-    profile["allergies"] = "Нет"
-    profile_service.save_profile(message.from_user.id, profile)
+    profile_service.save_profile(message.from_user.id, {"allergies": "Нет"})
 
     await message.answer("Принято! Теперь составлю меню.", reply_markup=ReplyKeyboardRemove())
 
@@ -67,11 +68,11 @@ async def write_allergies_manually(message: Message, state: FSMContext):
     await state.set_state(AllergyForm.waiting_for_text)
     await message.answer(
         "Напиши список продуктов через запятую (например: орехи, молоко, глютен):",
-        reply_markup=ReplyKeyboardRemove()
+        reply_markup=make_keyboard(["Отмена"]),
     )
 
 
-@router.message(AllergyForm.waiting_for_text, F.text)
+@router.message(AllergyForm.waiting_for_text, F.text, F.text != "Отмена")
 async def save_allergies_text(
     message: Message,
     state: FSMContext,
@@ -85,8 +86,7 @@ async def save_allergies_text(
         return
 
     # 2. Обновляем поле аллергий и сохраняем в БД
-    profile["allergies"] = message.text
-    profile_service.save_profile(message.from_user.id, profile)
+    profile_service.save_profile(message.from_user.id, {"allergies": message.text})
 
     await message.answer(f"Записал: {message.text}. Учту это при составлении меню!")
 
@@ -102,5 +102,5 @@ async def cancel_allergy(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
         "Отменено. Возвращаюсь в главное меню.",
-        reply_markup=ReplyKeyboardRemove()
+        reply_markup=get_main_menu_keyboard(),
     )
