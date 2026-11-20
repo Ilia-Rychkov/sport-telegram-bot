@@ -123,3 +123,15 @@ class ExerciseResult(SQLModel, table=True):
     weight_kg: float = Field(ge=0)
     sets: int = Field(ge=1)
     reps: int = Field(ge=1)
+
+
+class WeightEntry(SQLModel, table=True):
+    __tablename__ = "weight_entries"
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(
+        foreign_key="users.id",
+        index=True,
+    )
+    weight: float = Field(ge=30, le=350)
+    recorded_at: datetime = Field(default_factory=current_time)

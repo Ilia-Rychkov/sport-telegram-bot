@@ -1,3 +1,4 @@
+from bot.keyboards.main_menu import main_menu
 import logging
 from aiogram import Router, F
 from aiogram.types import Message, ReplyKeyboardRemove
@@ -28,7 +29,12 @@ async def start_workout_record(message: Message, state: FSMContext):
 
 
 @router.message(WorkoutRecordForm.waiting_for_text, F.text)
-async def process_natural_text(message: Message, state: FSMContext, workout_parser: WorkoutParserService):
+async def process_natural_text(
+    message: Message,
+    state: FSMContext,
+    workout_parser: WorkoutParserService,
+    workout_service: WorkoutService,
+):
     # 1. Отправляем в AI
     thinking_msg = await message.answer("⏳ Анализирую твой текст...")
     parsed = await workout_parser.parse_workout(message.text)
@@ -133,7 +139,7 @@ async def finalize_record(message: Message, state: FSMContext, workout_service: 
         f"✅ **{data['exercise_name'].capitalize()}** сохранено!\n"
         f"⚖️ Вес: {weight_text}\n"
         f"🔢 Подходы: {data['sets']} | Повторения: {data['reps']}\n\n"
-        f"Чтобы вернуться в меню, отправь /start.",
-        reply_markup=ReplyKeyboardRemove(),
+        f"Выбери раздел в главном меню.",
+        reply_markup=main_menu,
         parse_mode="Markdown"
     )
