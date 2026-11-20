@@ -3,6 +3,10 @@ from datetime import datetime, timezone
 from enum import Enum
 
 
+MIN_PROFILE_AGE = 10
+MAX_PROFILE_AGE = 100
+
+
 class Goal(str, Enum):
     LOSE_WEIGHT = "Снижение веса"
     GAIN_MUSCLE = "Набор мышечной массы"
@@ -44,14 +48,17 @@ class Profile(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="users.id", unique=True)
 
-    sex: Sex
-    age: int = Field(ge=18, le=100)
-    weight: float = Field(ge=30, le=350)
-    height: float = Field(ge=100, le=250)
+    sex: Sex | None = Field(default=None)
+    age: int | None = Field(default=None, ge=MIN_PROFILE_AGE, le=MAX_PROFILE_AGE)
+    weight: float | None = Field(default=None, ge=30, le=350)
+    height: float | None = Field(default=None, ge=100, le=250)
 
-    activity: ActivityLevel
-    goal: Goal
-    fitness: FitnessLevel
+    activity: ActivityLevel | None = Field(default=None)
+    goal: Goal | None = Field(default=None)
+    fitness: FitnessLevel | None = Field(default=None)
+
+    allergies: str = Field(default="")
+    daily_budget: float | None = Field(default=None, ge=0)
 class Recipe(SQLModel, table=True):
     __tablename__ = "recipes"
 
@@ -96,11 +103,39 @@ class WorkoutExercise(SQLModel, table=True):
     sets: int = Field(ge=1)
     repetitions: int = Field(ge=1)
     rest_seconds: int = Field(default=60, ge=0)
-class ProfileData(SQLModel):
-    sex: Sex
-    age: int = Field(ge=18, le=100)
+
+
+class WorkoutSession(SQLModel, table=True):
+    __tablename__ = "workout_sessions"
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id")
+    workout_id: int | None = Field(default=None, foreign_key="workouts.id")
+
+    date: datetime = Field(default_factory=current_time)
+    notes: str = ""
+
+
+class ExerciseResult(SQLModel, table=True):
+    __tablename__ = "exercise_results"
+
+    id: int | None = Field(default=None, primary_key=True)
+    session_id: int = Field(foreign_key="workout_sessions.id")
+    exercise_id: int = Field(foreign_key="exercises.id")
+
+    # Фактические данные (то, что пользователь реально поднял)
+    weight_kg: float = Field(ge=0)
+    sets: int = Field(ge=1)
+    reps: int = Field(ge=1)
+
+
+class WeightEntry(SQLModel, table=True):
+    __tablename__ = "weight_entries"
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(
+        foreign_key="users.id",
+        index=True,
+    )
     weight: float = Field(ge=30, le=350)
-    height: float = Field(ge=100, le=250)
-    activity: ActivityLevel
-    goal: Goal
-    fitness: FitnessLevel
+    recorded_at: datetime = Field(default_factory=current_time)

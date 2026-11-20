@@ -32,3 +32,23 @@ def make_keyboard(options):
         ],
         resize_keyboard=True,
     )
+
+def get_edit_profile_keyboard():
+    """Клавиатура для просмотра профиля."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Заполнить"), KeyboardButton(text="Изменить")],
+            [KeyboardButton(text="В главное меню")],
+        ],
+        resize_keyboard=True,
+    )
+
+def get_cancel_keyboard():
+    """Добавляем кнопку 'Сохранить и выйти' к обычным опциям."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Сохранить и выйти")],
+            [KeyboardButton(text="Отмена")],
+        ],
+        resize_keyboard=True,
+    )

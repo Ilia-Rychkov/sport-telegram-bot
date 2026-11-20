@@ -3,115 +3,53 @@ import logging
 import os
 from pathlib import Path
 
-from aiogram.fsm.context import FSMContext
+from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import SimpleEventIsolation
-
-from bot.handlers.profile import router as profile_router
-
-from aiogram import Bot, Dispatcher, F, Router
-from aiogram.filters import CommandStart
-from aiogram.types import (
-    ErrorEvent,
-    KeyboardButton,
-    Message,
-    ReplyKeyboardMarkup,
-)
 from dotenv import load_dotenv
 
+from bot.middlewares.db import DatabaseMiddleware
+
+# 1. Импортируем роутеры (включая новый start_router)
+from bot.handlers.start import router as start_router
+from bot.handlers.profile import router as profile_router
+from bot.handlers.nutrition import router as nutrition_router
+from bot.handlers.workout_record import router as workout_record_router
+from bot.handlers.progress import router as progress_router
+from bot.handlers.nutrition_allergies import router as nutrition_allergies_router
+from bot.handlers.fallback import router as fallback_router
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
-
-router = Router()
-
-main_menu = ReplyKeyboardMarkup(
-    keyboard=[
-        [
-            KeyboardButton(text="Мой профиль"),
-            KeyboardButton(text="Питание"),
-        ],
-        [
-            KeyboardButton(text="Тренировки"),
-            KeyboardButton(text="Прогресс"),
-        ],
-        [KeyboardButton(text="Помощь")],
-    ],
-    resize_keyboard=True,
-)
+from database.database import create_db_and_tables  # <-- Импорт
 
 
-@router.message(CommandStart())
-async def start(message: Message, state: FSMContext):
-    data = await state.get_data()
-    profile = data.get("profile")
-
-    await state.clear()
-
-    if profile is not None:
-        await state.update_data(profile=profile)
-
-    await message.answer(
-        "Привет! Я помогу следить за питанием, тренировками "
-        "и прогрессом.\nВыбери раздел в меню:",
-        reply_markup=main_menu,
-    )
 
 
-@router.message(F.text == "Помощь")
-async def help_message(message: Message):
-    await message.answer(
-        "Выбери раздел с помощью кнопок внизу.\n"
-        "Чтобы снова открыть главное меню, отправь /start."
-    )
-
-
-@router.message()
-async def unknown_message(message: Message):
-    await message.answer(
-        "Не понимаю эту команду или сообщение.\n"
-        "/start — главное меню\n"
-        "/cancel — отменить заполнение анкеты"
-    )
-
-
-@router.error()
-async def handle_error(event: ErrorEvent):
-    logging.error(
-        "Ошибка при обработке обновления",
-        exc_info=(
-            type(event.exception),
-            event.exception,
-            event.exception.__traceback__,
-        ),
-    )
-
-    message = event.update.message
-
-    if message:
-        try:
-            await message.answer(
-                "Произошла ошибка. Попробуй ещё раз чуть позже."
-            )
-        except Exception:
-            logging.exception("Не удалось отправить сообщение об ошибке")
-
-    return True
-
+from database.database import create_db_and_tables  # <-- Импорт
 
 async def main():
     logging.basicConfig(level=logging.INFO)
-
     token = os.getenv("BOT_TOKEN")
-
     if not token:
         raise RuntimeError("Добавь BOT_TOKEN в файл .env")
 
-    dispatcher = Dispatcher(
-    events_isolation=SimpleEventIsolation()
-)
+    # Создаём таблицы (если их нет)
+    create_db_and_tables()  # <-- ВЫЗОВ
 
+    dispatcher = Dispatcher(events_isolation=SimpleEventIsolation())
+    dispatcher.message.middleware(DatabaseMiddleware())
+
+    # 3. Регистрируем роутеры.
+    dispatcher.include_router(start_router)
     dispatcher.include_router(profile_router)
-    dispatcher.include_router(router)
+    dispatcher.include_router(nutrition_allergies_router)
+    dispatcher.include_router(nutrition_router)
+    dispatcher.include_router(workout_record_router)
+    dispatcher.include_router(progress_router)
 
+
+    dispatcher.include_router(fallback_router)
+
+    # 4. Запускаем бота
     async with Bot(token=token) as bot:
         await dispatcher.start_polling(bot)
 
