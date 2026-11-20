@@ -1,7 +1,7 @@
 from bot.keyboards.main_menu import main_menu
 import logging
 from aiogram import Router, F
-from aiogram.types import Message, ReplyKeyboardRemove
+from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
@@ -10,6 +10,11 @@ from backend.services.workout_parser_service import WorkoutParserService
 
 logger = logging.getLogger(__name__)
 router = Router()
+
+workout_cancel_menu = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text="Отмена")]],
+    resize_keyboard=True,
+)
 
 class WorkoutRecordForm(StatesGroup):
     waiting_for_text = State()
@@ -24,8 +29,14 @@ async def start_workout_record(message: Message, state: FSMContext):
     await message.answer(
         "🏋️ Расскажи, что сделал на тренировке.\n"
         "Можешь написать всё сразу, например: «Жим лежа 50 кг на 10 раз, 3 подхода» или «Отжимания 3 по 15».",
-        reply_markup=ReplyKeyboardRemove()
+        reply_markup=workout_cancel_menu,
     )
+
+
+@router.message(WorkoutRecordForm(), F.text == "Отмена")
+async def cancel_workout_record(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Запись тренировки отменена.", reply_markup=main_menu)
 
 
 @router.message(WorkoutRecordForm.waiting_for_text, F.text)

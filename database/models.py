@@ -3,6 +3,10 @@ from datetime import datetime, timezone
 from enum import Enum
 
 
+MIN_PROFILE_AGE = 10
+MAX_PROFILE_AGE = 100
+
+
 class Goal(str, Enum):
     LOSE_WEIGHT = "Снижение веса"
     GAIN_MUSCLE = "Набор мышечной массы"
@@ -45,7 +49,7 @@ class Profile(SQLModel, table=True):
     user_id: int = Field(foreign_key="users.id", unique=True)
 
     sex: Sex | None = Field(default=None)
-    age: int | None = Field(default=None, ge=18, le=100)
+    age: int | None = Field(default=None, ge=MIN_PROFILE_AGE, le=MAX_PROFILE_AGE)
     weight: float | None = Field(default=None, ge=30, le=350)
     height: float | None = Field(default=None, ge=100, le=250)
 
