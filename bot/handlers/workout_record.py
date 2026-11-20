@@ -4,17 +4,14 @@ from aiogram.types import Message, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-from backend.services.ai_service import parse_workout_text
-from backend.services.workout_db_service import save_workout_session, add_exercise_result
+from backend.services.workout_service import WorkoutService
+from backend.services.workout_parser_service import WorkoutParserService
 
 logger = logging.getLogger(__name__)
 router = Router()
 
-
 class WorkoutRecordForm(StatesGroup):
-    # Бот ждет свободный текст для парсинга
     waiting_for_text = State()
-    # Бот уточняет недостающие данные
     ask_weight = State()
     ask_sets = State()
     ask_reps = State()
@@ -31,10 +28,10 @@ async def start_workout_record(message: Message, state: FSMContext):
 
 
 @router.message(WorkoutRecordForm.waiting_for_text, F.text)
-async def process_natural_text(message: Message, state: FSMContext):
-    # 1. Отправляем сообщение в ИИ
+async def process_natural_text(message: Message, state: FSMContext, workout_parser: WorkoutParserService):
+    # 1. Отправляем в AI
     thinking_msg = await message.answer("⏳ Анализирую твой текст...")
-    parsed = await parse_workout_text(message.text)
+    parsed = await workout_parser.parse_workout(message.text)
 
     if not parsed or not parsed.get("exercise"):
         await thinking_msg.edit_text(
@@ -42,52 +39,41 @@ async def process_natural_text(message: Message, state: FSMContext):
         )
         return
 
-    # 2. Сохраняем то, что распознал ИИ
     await state.update_data(
         exercise_name=parsed["exercise"],
         weight=parsed.get("weight"),
         sets=parsed.get("sets"),
         reps=parsed.get("reps")
     )
-
     await thinking_msg.delete()
 
-    # 3. Проверяем, чего не хватает, и спрашиваем только это
+    # 2. Проверяем, чего не хватает
     if parsed.get("weight") is None:
-        # Если это упражнение на пресс или с собственным весом, вес может быть не нужен
         await message.answer(
             f"Упражнение **{parsed['exercise']}** записал.\n"
             f"Был ли дополнительный вес (в кг)? Если нет — напиши 0.",
             parse_mode="Markdown"
         )
         await state.set_state(WorkoutRecordForm.ask_weight)
-
     elif parsed.get("sets") is None:
-        await message.answer(f"Сколько было подходов?")
+        await message.answer("Сколько было подходов?")
         await state.set_state(WorkoutRecordForm.ask_sets)
-
     elif parsed.get("reps") is None:
-        await message.answer(f"Сколько повторений в каждом подходе?")
+        await message.answer("Сколько повторений в каждом подходе?")
         await state.set_state(WorkoutRecordForm.ask_reps)
-
     else:
-        # Все данные есть, сохраняем!
-        await finalize_record(message, state)
+        await finalize_record(message, state, workout_service)
 
-
-# --- Обработка уточнений ---
 
 @router.message(WorkoutRecordForm.ask_weight, F.text)
-async def process_weight(message: Message, state: FSMContext):
+async def process_weight(message: Message, state: FSMContext, workout_service: WorkoutService):
     try:
         weight = float(message.text.replace(",", "."))
     except ValueError:
         await message.answer("Введи число, например 50 или 0 если без веса.")
         return
-
     await state.update_data(weight=weight)
     data = await state.get_data()
-
     if data.get("sets") is None:
         await message.answer("Сколько было подходов?")
         await state.set_state(WorkoutRecordForm.ask_sets)
@@ -95,52 +81,47 @@ async def process_weight(message: Message, state: FSMContext):
         await message.answer("Сколько повторений в каждом подходе?")
         await state.set_state(WorkoutRecordForm.ask_reps)
     else:
-        await finalize_record(message, state)
+        await finalize_record(message, state, workout_service)
 
 
 @router.message(WorkoutRecordForm.ask_sets, F.text)
-async def process_sets(message: Message, state: FSMContext):
+async def process_sets(message: Message, state: FSMContext, workout_service: WorkoutService):
     try:
         sets = int(message.text)
         if sets <= 0: raise ValueError
     except ValueError:
         await message.answer("Введи целое положительное число.")
         return
-
     await state.update_data(sets=sets)
     data = await state.get_data()
-
     if data.get("reps") is None:
         await message.answer("Сколько повторений в каждом подходе?")
         await state.set_state(WorkoutRecordForm.ask_reps)
     else:
-        await finalize_record(message, state)
+        await finalize_record(message, state, workout_service)
 
 
 @router.message(WorkoutRecordForm.ask_reps, F.text)
-async def process_reps(message: Message, state: FSMContext):
+async def process_reps(message: Message, state: FSMContext, workout_service: WorkoutService):
     try:
         reps = int(message.text)
         if reps <= 0: raise ValueError
     except ValueError:
         await message.answer("Введи целое положительное число.")
         return
-
     await state.update_data(reps=reps)
-    await finalize_record(message, state)
+    await finalize_record(message, state, workout_service)
 
 
-# --- Функция сохранения в БД ---
-async def finalize_record(message: Message, state: FSMContext):
+async def finalize_record(message: Message, state: FSMContext, workout_service: WorkoutService):
     data = await state.get_data()
     telegram_id = message.from_user.id
 
-    session_id = save_workout_session(telegram_id, notes="Запись через бота")
-
-    add_exercise_result(
-        session_id=session_id,
+    # Вызываем сервис
+    workout_service.save_full_workout(
+        telegram_id=telegram_id,
         exercise_name=data['exercise_name'],
-        weight_kg=data.get('weight') or 0.0,  # Если вес None, пишем 0
+        weight=data.get('weight') or 0.0,
         sets=data['sets'],
         reps=data['reps']
     )
@@ -148,7 +129,6 @@ async def finalize_record(message: Message, state: FSMContext):
     await state.clear()
 
     weight_text = f"{data['weight']} кг" if data.get('weight') else "без веса"
-
     await message.answer(
         f"✅ **{data['exercise_name'].capitalize()}** сохранено!\n"
         f"⚖️ Вес: {weight_text}\n"

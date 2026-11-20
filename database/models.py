@@ -44,14 +44,16 @@ class Profile(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="users.id", unique=True)
 
-    sex: Sex
-    age: int = Field(ge=18, le=100)
-    weight: float = Field(ge=30, le=350)
-    height: float = Field(ge=100, le=250)
+    sex: Sex | None = Field(default=None)
+    age: int | None = Field(default=None, ge=18, le=100)
+    weight: float | None = Field(default=None, ge=30, le=350)
+    height: float | None = Field(default=None, ge=100, le=250)
 
-    activity: ActivityLevel
-    goal: Goal
-    fitness: FitnessLevel
+    activity: ActivityLevel | None = Field(default=None)
+    goal: Goal | None = Field(default=None)
+    fitness: FitnessLevel | None = Field(default=None)
+
+    allergies: str = Field(default="")
 class Recipe(SQLModel, table=True):
     __tablename__ = "recipes"
 

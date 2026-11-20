@@ -177,6 +177,14 @@ async def generate_nutrition_plan(
         logger.error("Таймаут при запросе к Gemini API (генерация питания)")
         return None
     except Exception as e:
+        if "503" in str(e):
+            logger.warning("Google перегружен (503). Пробую еще раз через 2 секунды...")
+            await asyncio.sleep(2)
+            # Рекурсивный вызов (пробуем еще раз)
+            return await generate_nutrition_plan(
+                target_calories, target_protein, target_fat, target_carbs, allergies
+            )
+
         logger.error(f"Ошибка при обращении к Gemini (генерация питания): {e}")
         return None
 

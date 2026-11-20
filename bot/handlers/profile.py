@@ -1,24 +1,20 @@
-from backend.services.profile_service import recalculate_profile_norms
-
 from math import isfinite
-
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message, ReplyKeyboardRemove
+from aiogram.types import Message, ReplyKeyboardRemove, KeyboardButton
+from bot.keyboards.main import get_main_menu_keyboard
+from backend.services.main_menu import MainMenuService
 
+
+from backend.services.profile_service import ProfileService
 from bot.keyboards.profile import (
-    ACTIVITY_OPTIONS,
-    FITNESS_OPTIONS,
-    GOAL_OPTIONS,
-    SEX_OPTIONS,
-    make_keyboard,
+    ACTIVITY_OPTIONS, FITNESS_OPTIONS, GOAL_OPTIONS, SEX_OPTIONS,
+    make_keyboard, get_edit_profile_keyboard, get_cancel_keyboard
 )
 
-
 router = Router()
-
 
 class ProfileForm(StatesGroup):
     age = State()
@@ -28,11 +24,8 @@ class ProfileForm(StatesGroup):
     activity = State()
     goal = State()
     fitness = State()
-    confirmation = State()
     editing = State()
 
-
-# Порядок заполнения, названия полей и вопросы.
 FIELDS = {
     "age": ("Возраст", "Сколько тебе лет? Введи целое число."),
     "sex": ("Пол", "Выбери пол:"),
@@ -42,154 +35,103 @@ FIELDS = {
     "goal": ("Цель", "Выбери свою цель:"),
     "fitness": ("Подготовка", "Выбери уровень физической подготовки:"),
 }
-
 OPTIONS = {
     "sex": SEX_OPTIONS,
     "activity": ACTIVITY_OPTIONS,
     "goal": GOAL_OPTIONS,
     "fitness": FITNESS_OPTIONS,
 }
-
-# Это ограничения ввода для первой версии проекта.
 NUMBER_LIMITS = {
     "age": (18, 100),
     "height": (100, 250),
     "weight": (30, 350),
 }
-
 FIELD_ORDER = list(FIELDS)
 EDIT_OPTIONS = [title for title, question in FIELDS.values()]
 
 
-async def ask_field(message: Message, state: FSMContext, field: str):
-    await state.set_state(getattr(ProfileForm, field))
-
-    if field in OPTIONS:
-        keyboard = make_keyboard(OPTIONS[field])
-    else:
-        keyboard = ReplyKeyboardRemove()
-
-    await message.answer(
-        FIELDS[field][1],
-        reply_markup=keyboard,
-    )
+def format_value(field: str, value) -> str:
+    if value is None or value == "":
+        return "Не указано"
+    if field == "height":
+        return f"{value} см"
+    if field == "weight":
+        return f"{value} кг"
+    return str(value)
 
 
-async def show_summary(message: Message, state: FSMContext):
-    data = await state.get_data()
-    draft = data["draft"]
+async def show_summary(message: Message, state: FSMContext, profile_service: ProfileService, profile: dict):
+    lines = ["👤 **Твой профиль:**\n"]
+    for field, (title, _) in FIELDS.items():
+        value = profile.get(field)
+        lines.append(f"{title}: {format_value(field, value)}")
 
-    lines = ["Проверь данные:\n"]
+    allergies = profile.get("allergies")
+    lines.append(f"Аллергии: {allergies if allergies else 'Не указано'}")
 
-    for field, (title, question) in FIELDS.items():
-        value = draft[field]
-
-        if field == "height":
-            value = f"{value} см"
-        elif field == "weight":
-            value = f"{value} кг"
-
-        lines.append(f"{title}: {value}")
-
-    # НОВОЕ: Если в профиле уже есть рассчитанные нормы, показываем их
-    profile = data.get("profile")
-    if profile and "norms" in profile:
-        norms = profile["norms"]
-        lines.append("\n📊 **Твоя суточная норма:**")
+    norms = profile_service.recalculate_norms(profile)
+    if norms:
+        lines.append("\n📊 **Суточная норма:**")
         lines.append(f"🔥 Калории: {norms['calories']} ккал")
         lines.append(f"🥩 БЖУ: {norms['protein']} / {norms['fat']} / {norms['carbs']} г")
+    else:
+        lines.append("\n⚠️ *Заполни все поля, чтобы рассчитать нормы.*")
 
-        if norms.get("metadata", {}).get("warning"):
-            lines.append(f"\n⚠️ {norms['metadata']['warning']}")
-
-    await state.set_state(ProfileForm.confirmation)
     await message.answer(
         "\n".join(lines),
-        reply_markup=make_keyboard(("Подтвердить", "Изменить данные", "Отмена")),
-        parse_mode="Markdown"  # Добавили, чтобы жирный шрифт работал
+        reply_markup=get_edit_profile_keyboard(),
+        parse_mode="Markdown"
     )
 
 
-@router.message(Command("cancel"))
-@router.message(F.text == "Отмена")
-async def cancel_profile(message: Message, state: FSMContext):
-    # Удаляем черновик, сохраняя ранее подтверждённый профиль.
-    data = await state.get_data()
-    profile = data.get("profile")
+async def ask_field(message: Message, state: FSMContext, field: str):
+    """Спрашивает конкретное поле, добавляя кнопку 'Сохранить и выйти'."""
+    await state.set_state(getattr(ProfileForm, field))
+    if field in OPTIONS:
+        keyboard = make_keyboard(OPTIONS[field])
+        keyboard.keyboard.append([KeyboardButton(text="Сохранить и выйти")])
+    else:
+        keyboard = get_cancel_keyboard()
 
-    await state.clear()
+    await message.answer(FIELDS[field][1], reply_markup=keyboard)
 
-    if profile is not None:
-        await state.update_data(profile=profile)
 
-    await message.answer(
-        "Заполнение отменено. Отправь /start, чтобы открыть меню.",
-        reply_markup=ReplyKeyboardRemove(),
-    )
+def get_first_unfilled_field(profile: dict) -> str | None:
+    """Возвращает название первого незаполненного поля (в порядке FIELD_ORDER)."""
+    for field in FIELD_ORDER:
+        if profile.get(field) is None:
+            return field
+    return None
 
 
 @router.message(F.text == "Мой профиль")
-async def open_profile(message: Message, state: FSMContext):
-    data = await state.get_data()
-    profile = data.get("profile")
+async def open_profile(message: Message, state: FSMContext, profile_service: ProfileService):
+    await state.clear()
+    profile = profile_service.get_profile(message.from_user.id) or {}
+    await state.update_data(draft=profile.copy(), editing_field=None)
+    await show_summary(message, state, profile_service, profile)
 
-    if profile is not None:
-        await state.update_data(
-            draft=profile.copy(),
-            editing_field=None,
+
+@router.message(F.text == "Заполнить")
+async def start_filling(message: Message, state: FSMContext, profile_service: ProfileService):
+    """Поочередно спрашивает все незаполненные поля."""
+    profile = profile_service.get_profile(message.from_user.id) or {}
+    draft = profile.copy()
+    await state.update_data(draft=draft, editing_field=None)
+
+    first_field = get_first_unfilled_field(draft)
+    if first_field is None:
+        await message.answer(
+            "🎉 У тебя уже заполнены все поля! Если хочешь что-то поменять — нажми «Изменить».",
+            reply_markup=get_edit_profile_keyboard()
         )
-        await show_summary(message, state)
         return
 
-    await state.update_data(draft={}, editing_field=None)
-    await message.answer(
-        "Заполним анкету. В этой версии анкета доступна "
-        "для пользователей от 18 до 100 лет.\n"
-        "Отменить заполнение можно командой /cancel."
-    )
-    await ask_field(message, state, "age")
-
-@router.message(ProfileForm.confirmation, F.text == "Подтвердить")
-async def confirm_profile(message: Message, state: FSMContext):
-    data = await state.get_data()
-    profile = data["draft"].copy()
-
-    # 1. НОВОЕ: Считаем нормы на основе данных из черновика
-    norms = recalculate_profile_norms(profile)
-
-    # 2. Очищаем состояние и сохраняем профиль (как было)
-    await state.clear()
-
-    if norms:
-        # 3. Если расчет успешен, добавляем нормы в профиль
-        profile["norms"] = norms
-        await state.update_data(profile=profile)
-
-        # Формируем текст с предупреждением (если оно есть)
-        warning_text = f"\n\n⚠️ {norms['metadata']['warning']}" if norms['metadata'].get('warning') else ""
-
-        # 4. Отправляем пользователю красивое сообщение с цифрами
-        await message.answer(
-            f"✅ Данные подтверждены!\n\n"
-            f"Твоя норма: {norms['calories']} ккал\n"
-            f"БЖУ: {norms['protein']} / {norms['fat']} / {norms['carbs']} г{warning_text}\n\n"
-            f"Для просмотра и изменения открой «Мой профиль».\n"
-            f"Вернуться в главное меню: /start.",
-            reply_markup=ReplyKeyboardRemove(),
-        )
-    else:
-        # 5. Если калькулятор упал (например, ошибка в данных), не теряем профиль
-        await state.update_data(profile=profile)
-        await message.answer(
-            "Данные подтверждены!\n"
-            "Но не удалось рассчитать нормы калорий. Попробуйте изменить данные позже.\n"
-            "Вернуться в главное меню: /start.",
-            reply_markup=ReplyKeyboardRemove(),
-        )
+    await ask_field(message, state, first_field)
 
 
-@router.message(ProfileForm.confirmation, F.text == "Изменить данные")
-async def choose_field(message: Message, state: FSMContext):
+@router.message(F.text == "Изменить")
+async def start_editing(message: Message, state: FSMContext):
     await state.set_state(ProfileForm.editing)
     await message.answer(
         "Что хочешь изменить?",
@@ -197,116 +139,104 @@ async def choose_field(message: Message, state: FSMContext):
     )
 
 
-@router.message(
-    ProfileForm.editing,
-    F.text,
-    ~F.text.startswith("/"),
-)
-async def edit_field(message: Message, state: FSMContext):
-    for field, (title, question) in FIELDS.items():
+@router.message(F.text == "В главное меню")
+async def back_to_main(message: Message, state: FSMContext):
+    await state.clear()
+
+    # Используем сервис главного меню, чтобы получить текст и клавиатуру
+    menu_service = MainMenuService()
+
+    await message.answer(
+        menu_service.get_welcome_text(),  # или просто "Главное меню:"
+        reply_markup=menu_service.get_main_keyboard()
+    )
+
+
+@router.message(ProfileForm.editing, F.text, ~F.text.startswith("/"))
+async def choose_field(message: Message, state: FSMContext, profile_service: ProfileService):
+    if message.text == "Отмена":
+        await state.clear()
+        profile = profile_service.get_profile(message.from_user.id) or {}
+        await show_summary(message, state, profile_service, profile)
+        return
+
+    for field, (title, _) in FIELDS.items():
         if message.text == title:
-            await state.update_data(editing_field=field)
+            data = await state.get_data()
+            draft = data.get("draft") or (profile_service.get_profile(message.from_user.id) or {})
+            await state.update_data(draft=draft, editing_field=field)
             await ask_field(message, state, field)
             return
 
     await message.answer("Выбери поле с помощью кнопок.")
 
 
-@router.message(
-    ProfileForm.age,
-    F.text,
-    ~F.text.startswith("/"),
-)
-@router.message(
-    ProfileForm.sex,
-    F.text,
-    ~F.text.startswith("/"),
-)
-@router.message(
-    ProfileForm.height,
-    F.text,
-    ~F.text.startswith("/"),
-)
-@router.message(
-    ProfileForm.weight,
-    F.text,
-    ~F.text.startswith("/"),
-)
-@router.message(
-    ProfileForm.activity,
-    F.text,
-    ~F.text.startswith("/"),
-)
-@router.message(
-    ProfileForm.goal,
-    F.text,
-    ~F.text.startswith("/"),
-)
-@router.message(
-    ProfileForm.fitness,
-    F.text,
-    ~F.text.startswith("/"),
-)
-async def receive_answer(message: Message, state: FSMContext):
+@router.message(ProfileForm.age, F.text)
+@router.message(ProfileForm.sex, F.text)
+@router.message(ProfileForm.height, F.text)
+@router.message(ProfileForm.weight, F.text)
+@router.message(ProfileForm.activity, F.text)
+@router.message(ProfileForm.goal, F.text)
+@router.message(ProfileForm.fitness, F.text)
+async def receive_answer(message: Message, state: FSMContext, profile_service: ProfileService):
+    if message.text == "Сохранить и выйти":
+        data = await state.get_data()
+        draft = data.get("draft", {})
+        profile_service.save_profile(message.from_user.id, draft)
+        await state.clear()
+        await message.answer(
+            "✅ Данные сохранены!\nВернуться в главное меню: /start.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return
+
+    if message.text == "Отмена":
+        await state.clear()
+        profile = profile_service.get_profile(message.from_user.id) or {}
+        await show_summary(message, state, profile_service, profile)
+        return
+
     current_state = await state.get_state()
     field = current_state.split(":")[-1]
     text = message.text.strip()
 
+    # Валидация
     if field in OPTIONS:
         if text not in OPTIONS[field]:
             await message.answer("Выбери один из вариантов на кнопках.")
             return
-
         value = text
     else:
         try:
-            if field == "age":
-                value = int(text)
-            else:
-                value = float(text.replace(",", "."))
+            value = int(text) if field == "age" else float(text.replace(",", "."))
         except ValueError:
             await message.answer(
-                "Введи целое число."
-                if field == "age"
-                else "Введи число, например 71 или 71,5."
+                "Введи целое число." if field == "age" else "Введи число, например 71 или 71,5."
             )
             return
 
         minimum, maximum = NUMBER_LIMITS[field]
-
         if not isfinite(value) or not minimum <= value <= maximum:
-            await message.answer(
-                f"Допустимое значение: от {minimum} до {maximum}."
-            )
+            await message.answer(f"Допустимое значение: от {minimum} до {maximum}.")
             return
 
     data = await state.get_data()
-    draft = data["draft"].copy()
+    draft = data.get("draft", {})
     draft[field] = value
-
     await state.update_data(draft=draft)
 
+    # Если мы в режиме "Изменить" — сохраняем и показываем сводку
     if data.get("editing_field") is not None:
         await state.update_data(editing_field=None)
-        await show_summary(message, state)
+        profile_service.save_profile(message.from_user.id, draft)
+        await show_summary(message, state, profile_service, draft)
         return
 
-    next_index = FIELD_ORDER.index(field) + 1
-
-    if next_index < len(FIELD_ORDER):
-        await ask_field(message, state, FIELD_ORDER[next_index])
+    # Иначе мы в режиме "Заполнить" — ищем следующее незаполненное поле
+    next_field = get_first_unfilled_field(draft)
+    if next_field is not None:
+        await ask_field(message, state, next_field)
     else:
-        await show_summary(message, state)
-
-
-# Этот обработчик находится после остальных обработчиков анкеты.
-# Он ловит фото, стикеры и неподходящие ответы на этапе подтверждения.
-@router.message(
-    ProfileForm(),
-    ~F.text.startswith("/"),
-)
-async def unexpected_answer(message: Message):
-    await message.answer(
-        "Сейчас заполняем анкету. Ответь на текущий вопрос "
-        "или отправь /cancel."
-    )
+        # Всё заполнили — сохраняем и показываем сводку
+        profile_service.save_profile(message.from_user.id, draft)
+        await show_summary(message, state, profile_service, draft)
