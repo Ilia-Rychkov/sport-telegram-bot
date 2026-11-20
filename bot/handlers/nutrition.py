@@ -89,7 +89,8 @@ async def generate_and_send_plan(
         target_protein=norms["protein"],
         target_fat=norms["fat"],
         target_carbs=norms["carbs"],
-        allergies=allergies_list
+        allergies=allergies_list,
+        daily_budget=profile.get("daily_budget")
     )
 
     await thinking_msg.delete()

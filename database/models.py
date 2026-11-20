@@ -54,6 +54,7 @@ class Profile(SQLModel, table=True):
     fitness: FitnessLevel | None = Field(default=None)
 
     allergies: str = Field(default="")
+    daily_budget: float | None = Field(default=None, ge=0)
 class Recipe(SQLModel, table=True):
     __tablename__ = "recipes"
 

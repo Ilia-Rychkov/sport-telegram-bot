@@ -6,6 +6,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, ReplyKeyboardRemove, KeyboardButton
 from bot.keyboards.main import get_main_menu_keyboard
 from backend.services.main_menu import MainMenuService
+from bot.handlers.nutrition_allergies import get_allergy_keyboard, AllergyForm
 
 
 from backend.services.profile_service import ProfileService
@@ -25,6 +26,9 @@ class ProfileForm(StatesGroup):
     goal = State()
     fitness = State()
     editing = State()
+    allergies_asking = State()
+    allergies_text = State()
+    daily_budget = State()
 
 FIELDS = {
     "age": ("Возраст", "Сколько тебе лет? Введи целое число."),
@@ -34,6 +38,8 @@ FIELDS = {
     "activity": ("Активность", "Выбери обычный уровень активности:"),
     "goal": ("Цель", "Выбери свою цель:"),
     "fitness": ("Подготовка", "Выбери уровень физической подготовки:"),
+    "allergies": ("Аллергии", "Есть ли у тебя аллергии или продукты, которые не ешь?"),
+    "daily_budget": ("Бюджет на день", "Сколько денег в день ты готов тратить на питание? (в рублях)")
 }
 OPTIONS = {
     "sex": SEX_OPTIONS,
@@ -45,9 +51,10 @@ NUMBER_LIMITS = {
     "age": (18, 100),
     "height": (100, 250),
     "weight": (30, 350),
+    "daily_budget": (0, 100000),
 }
-FIELD_ORDER = list(FIELDS)
-EDIT_OPTIONS = [title for title, question in FIELDS.values()]
+FIELD_ORDER = ["age", "sex", "height", "weight", "activity", "goal", "fitness"]
+EDIT_OPTIONS = [title for title, _ in FIELDS.values()]
 
 
 def format_value(field: str, value) -> str:
@@ -57,6 +64,8 @@ def format_value(field: str, value) -> str:
         return f"{value} см"
     if field == "weight":
         return f"{value} кг"
+    if field == "daily_budget":
+        return f"{value} ₽/день"
     return str(value)
 
 
@@ -66,8 +75,8 @@ async def show_summary(message: Message, state: FSMContext, profile_service: Pro
         value = profile.get(field)
         lines.append(f"{title}: {format_value(field, value)}")
 
-    allergies = profile.get("allergies")
-    lines.append(f"Аллергии: {allergies if allergies else 'Не указано'}")
+    #allergies = profile.get("allergies")
+    #lines.append(f"Аллергии: {allergies if allergies else 'Не указано'}")
 
     norms = profile_service.recalculate_norms(profile)
     if norms:
@@ -160,6 +169,17 @@ async def choose_field(message: Message, state: FSMContext, profile_service: Pro
         await show_summary(message, state, profile_service, profile)
         return
 
+    if message.text == "Аллергии":
+        data = await state.get_data()
+        draft = data.get("draft") or (profile_service.get_profile(message.from_user.id) or {})
+        await state.update_data(draft=draft)
+        await state.set_state(ProfileForm.allergies_asking)
+        await message.answer(
+            "Есть ли у тебя аллергии?",
+            reply_markup=get_allergy_keyboard()
+        )
+        return
+
     for field, (title, _) in FIELDS.items():
         if message.text == title:
             data = await state.get_data()
@@ -178,6 +198,7 @@ async def choose_field(message: Message, state: FSMContext, profile_service: Pro
 @router.message(ProfileForm.activity, F.text)
 @router.message(ProfileForm.goal, F.text)
 @router.message(ProfileForm.fitness, F.text)
+@router.message(ProfileForm.daily_budget, F.text)
 async def receive_answer(message: Message, state: FSMContext, profile_service: ProfileService):
     if message.text == "Сохранить и выйти":
         data = await state.get_data()
@@ -208,7 +229,15 @@ async def receive_answer(message: Message, state: FSMContext, profile_service: P
         value = text
     else:
         try:
-            value = int(text) if field == "age" else float(text.replace(",", "."))
+            if field == "age":
+                value = int(text)
+            elif field == "daily_budget":
+                value = float(text.replace(",", "."))
+                if value < 0:
+                    await message.answer("Бюджет не может быть отрицательным.")
+                    return
+            else:
+                value = float(text.replace(",", "."))
         except ValueError:
             await message.answer(
                 "Введи целое число." if field == "age" else "Введи число, например 71 или 71,5."
@@ -240,3 +269,50 @@ async def receive_answer(message: Message, state: FSMContext, profile_service: P
         # Всё заполнили — сохраняем и показываем сводку
         profile_service.save_profile(message.from_user.id, draft)
         await show_summary(message, state, profile_service, draft)
+
+
+
+
+@router.message(ProfileForm.allergies_asking, F.text == "Нет аллергий")
+async def profile_no_allergies(message: Message, state: FSMContext, profile_service: ProfileService):
+    data = await state.get_data()
+    draft = data.get("draft", {})
+    draft["allergies"] = "Нет"
+
+    # Сохраняем в БД
+    profile_service.save_profile(message.from_user.id, draft)
+
+    await state.update_data(draft=draft)
+    await message.answer("Записал: аллергий нет.", reply_markup=ReplyKeyboardRemove())
+    await show_summary(message, state, profile_service, draft)
+
+
+@router.message(ProfileForm.allergies_asking, F.text == "Написать вручную")
+async def profile_write_allergies(message: Message, state: FSMContext):
+    await state.set_state(ProfileForm.allergies_text)
+    await message.answer(
+        "Напиши список продуктов через запятую (например: орехи, молоко, глютен):",
+        reply_markup=ReplyKeyboardRemove()
+    )
+
+
+@router.message(ProfileForm.allergies_text, F.text)
+async def profile_save_allergies(message: Message, state: FSMContext, profile_service: ProfileService):
+    data = await state.get_data()
+    draft = data.get("draft", {})
+    draft["allergies"] = message.text
+
+    # Сохраняем в БД
+    profile_service.save_profile(message.from_user.id, draft)
+
+    await state.update_data(draft=draft)
+    await message.answer(f"Записал: {message.text}.", reply_markup=ReplyKeyboardRemove())
+    await show_summary(message, state, profile_service, draft)
+
+
+@router.message(ProfileForm.allergies_asking, F.text == "Отмена")
+@router.message(ProfileForm.allergies_text, F.text == "Отмена")
+async def profile_cancel_allergies(message: Message, state: FSMContext, profile_service: ProfileService):
+    await state.clear()
+    profile = profile_service.get_profile(message.from_user.id) or {}
+    await show_summary(message, state, profile_service, profile)

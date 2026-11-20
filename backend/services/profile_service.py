@@ -44,7 +44,8 @@ class ProfileService:
             "activity": db_profile.activity.value if db_profile.activity else None,
             "goal": db_profile.goal.value if db_profile.goal else None,
             "fitness": db_profile.fitness.value if db_profile.fitness else None,
-            "allergies": db_profile.allergies or None
+            "allergies": db_profile.allergies or None,
+            "daily_budget": db_profile.daily_budget
         }
 
     def save_profile(self, telegram_id: int, profile_data: Dict[str, Any]) -> None:
@@ -77,6 +78,8 @@ class ProfileService:
             db_profile.fitness = profile_data["fitness"]
         if profile_data.get("allergies") is not None:
             db_profile.allergies = profile_data["allergies"]
+        if profile_data.get("daily_budget") is not None:
+            db_profile.daily_budget = float(profile_data["daily_budget"])
 
         self.session.add(db_profile)
         self.session.commit()

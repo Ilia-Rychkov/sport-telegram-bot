@@ -11,7 +11,20 @@ class NutritionService:
     def __init__(self, ai_provider: IAIProvider):
         self.ai = ai_provider
 
-    async def generate_plan(self, target_calories, target_protein, target_fat, target_carbs, allergies=None):
+    async def generate_plan(
+            self,
+            target_calories: int,
+            target_protein: int,
+            target_fat: int,
+            target_carbs: int,
+            allergies: list[str] = None,
+            daily_budget: float | None = None
+    ) -> str | None:
+
+        budget_text = ""
+        if daily_budget:
+            budget_text = f"Бюджет на день: {daily_budget} рублей. Старайся подобрать продукты в рамках этого бюджета."
+
         cuisines = ["итальянская", "азиатская", "средиземноморская", "русская", "мексиканская", "французская"]
         cooking_styles = ["быстрые рецепты (до 20 минут)", "блюда в духовке", "салаты и легкие закуски", "супы и рагу",
                           "блюда на сковороде"]
@@ -34,6 +47,7 @@ class NutritionService:
         - Жиры: {target_fat} г
         - Углеводы: {target_carbs} г
         {allergy_text}
+        {budget_text}
 
         🎲 РАЗНООБРАЗИЕ:
         Сегодня составь меню в стиле **{random_cuisine} кухни**.
@@ -45,7 +59,9 @@ class NutritionService:
         1. Название блюда.
         2. Примерные калории и БЖУ.
         3. Короткий рецепт (2-3 предложения).
-
+        
+        Нюансы: если в промпте указан бюджет на день, то прописывай цены в России для каждого из блюд.
+        
         ВАЖНО: Форматируй ответ с помощью HTML-тегов, так как он будет отправлен в Telegram.
         Используй <b>жирный шрифт</b> для заголовков (например, <b>Завтрак</b>) и названий блюд.
         Используй <i>курсив</i> для пояснений.
