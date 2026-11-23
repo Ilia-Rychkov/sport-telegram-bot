@@ -110,6 +110,7 @@ async def generate_and_send_plan(
             reply_markup=get_main_menu_keyboard()
         )
     else:
+        await state.clear()
         await message.answer(
             "😔 Извини, не удалось составить план питания. Попробуй позже.",
             reply_markup=get_main_menu_keyboard()

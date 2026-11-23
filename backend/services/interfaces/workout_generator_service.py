@@ -7,7 +7,7 @@ class IWorkoutGeneratorService(ABC):
         self,
         profile: Dict,
         location: str,
-        equipment: List[str],
+        equipment: List[str] | None,
         muscle_group: str,
         history: List[Dict]
     ) -> Optional[str]:

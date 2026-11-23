@@ -14,7 +14,7 @@ class WorkoutGeneratorService(IWorkoutGeneratorService):
             self,
             profile: Dict,
             location: str,
-            equipment: List[str],
+            equipment: List[str] | None,
             muscle_group: str,
             history: List[Dict]
     ) -> Optional[str]:
@@ -26,7 +26,15 @@ class WorkoutGeneratorService(IWorkoutGeneratorService):
                 exercises = ", ".join([e["name"] for e in session.get("exercises", [])])
                 history_text += f"- {session['date']}: {exercises}\n"
 
-        equipment_text = f"Доступный инвентарь: {', '.join(equipment)}." if equipment else "Инвентаря нет, только собственный вес."
+        if equipment is None:
+            equipment_text = (
+                "Инвентарь не уточняли. Подбирай упражнения с учётом места тренировки "
+                "и предлагай замену, если нужного оборудования нет."
+            )
+        elif equipment:
+            equipment_text = f"Доступный инвентарь: {', '.join(equipment)}."
+        else:
+            equipment_text = "Инвентаря нет, используй только собственный вес."
 
         prompt = f"""
         Ты — профессиональный персональный тренер. Составь план тренировки.

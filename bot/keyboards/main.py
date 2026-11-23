@@ -1,17 +1,22 @@
-from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import ReplyKeyboardMarkup
+
+from bot.keyboards.labels import make_button
+
+PROFILE_BUTTON = "Мой профиль"
+
 
 def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [
-                KeyboardButton(text="Мой профиль"),
-                KeyboardButton(text="Питание"),
+                make_button(PROFILE_BUTTON),
+                make_button("Питание"),
             ],
             [
-                KeyboardButton(text="Тренировки"),
-                KeyboardButton(text="Прогресс"),
+                make_button("Тренировки"),
+                make_button("Прогресс"),
             ],
-            [KeyboardButton(text="Помощь")],
+            [make_button("Помощь")],
         ],
         resize_keyboard=True,
     )

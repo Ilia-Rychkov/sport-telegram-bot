@@ -1,6 +1,6 @@
 import logging
 from aiogram import Router, F
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from aiogram.types import Message, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
@@ -19,14 +19,7 @@ class AllergyForm(StatesGroup):
 
 
 def get_allergy_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="Нет аллергий")],
-            [KeyboardButton(text="Написать вручную")],
-            [KeyboardButton(text="Отмена")]
-        ],
-        resize_keyboard=True
-    )
+    return make_keyboard(["Нет аллергий", "Написать вручную", "Отмена"])
 
 
 async def ask_for_allergies(message: Message, state: FSMContext):

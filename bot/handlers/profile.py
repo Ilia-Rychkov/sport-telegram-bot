@@ -4,8 +4,9 @@ from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message, ReplyKeyboardRemove, KeyboardButton
-from bot.keyboards.main import get_main_menu_keyboard
+from aiogram.types import Message, ReplyKeyboardRemove
+from bot.keyboards.labels import make_button
+from bot.keyboards.main import PROFILE_BUTTON, get_main_menu_keyboard
 from backend.services.main_menu import MainMenuService
 from backend.services.nutrition_service import NutritionService
 from bot.handlers.nutrition import generate_and_send_plan
@@ -13,7 +14,12 @@ from bot.handlers.nutrition_allergies import get_allergy_keyboard
 
 
 from backend.services.profile_service import ProfileService
-from database.models import MAX_PROFILE_AGE, MIN_PROFILE_AGE
+from database.models import (
+    DEFAULT_WEIGHT_REMINDER_DAYS,
+    MAX_PROFILE_AGE,
+    MAX_WEIGHT_REMINDER_DAYS,
+    MIN_PROFILE_AGE,
+)
 from bot.keyboards.profile import (
     ACTIVITY_OPTIONS, FITNESS_OPTIONS, GOAL_OPTIONS, SEX_OPTIONS,
     make_keyboard, get_edit_profile_keyboard, get_cancel_keyboard
@@ -33,6 +39,7 @@ class ProfileForm(StatesGroup):
     allergies_asking = State()
     allergies_text = State()
     daily_budget = State()
+    weight_reminder_days = State()
 
 FIELDS = {
     "age": ("Возраст", "Сколько тебе лет? Введи целое число."),
@@ -47,6 +54,10 @@ FIELDS = {
         "Бюджет на день",
         "Сколько рублей в день ты готов тратить на питание? Введи 0, если лимита нет.",
     ),
+    "weight_reminder_days": (
+        "Напоминание о весе",
+        "Сколько дней должно пройти с последней записи веса? Введи число, например 2, 7 или 30.",
+    ),
 }
 OPTIONS = {
     "sex": SEX_OPTIONS,
@@ -59,12 +70,16 @@ NUMBER_LIMITS = {
     "height": (100, 250),
     "weight": (30, 350),
     "daily_budget": (0, 100000),
+    "weight_reminder_days": (1, MAX_WEIGHT_REMINDER_DAYS),
 }
-FIELD_ORDER = list(FIELDS)
+FIELD_ORDER = [field for field in FIELDS if field != "weight_reminder_days"]
 EDIT_OPTIONS = [title for title, _ in FIELDS.values()]
 
 
 def format_value(field: str, value) -> str:
+    if field == "weight_reminder_days":
+        days = value if value is not None else DEFAULT_WEIGHT_REMINDER_DAYS
+        return "Через сутки" if days == 1 else f"Через {days} дн."
     if value is None or value == "":
         return "Не указано"
     if field == "height":
@@ -109,10 +124,10 @@ async def ask_field(message: Message, state: FSMContext, field: str):
     await state.set_state(field_state)
     if field == "allergies":
         keyboard = get_allergy_keyboard()
-        keyboard.keyboard.append([KeyboardButton(text="Сохранить и выйти")])
+        keyboard.keyboard.append([make_button("Сохранить и выйти")])
     elif field in OPTIONS:
         keyboard = make_keyboard(OPTIONS[field])
-        keyboard.keyboard.append([KeyboardButton(text="Сохранить и выйти")])
+        keyboard.keyboard.append([make_button("Сохранить и выйти")])
     else:
         keyboard = get_cancel_keyboard()
 
@@ -134,7 +149,7 @@ async def cancel_profile(message: Message, state: FSMContext, profile_service: P
     await show_summary(message, state, profile_service, profile)
 
 
-@router.message(F.text == "Мой профиль")
+@router.message(F.text == PROFILE_BUTTON)
 async def open_profile(message: Message, state: FSMContext, profile_service: ProfileService):
     await state.clear()
     profile = profile_service.get_profile(message.from_user.id) or {}
@@ -220,6 +235,7 @@ async def save_and_exit(message: Message, state: FSMContext, profile_service: Pr
 @router.message(ProfileForm.goal, F.text)
 @router.message(ProfileForm.fitness, F.text)
 @router.message(ProfileForm.daily_budget, F.text)
+@router.message(ProfileForm.weight_reminder_days, F.text)
 async def receive_answer(
     message: Message, state: FSMContext, profile_service: ProfileService, nutrition_service: NutritionService
 ):
@@ -233,7 +249,7 @@ async def receive_answer(
     field = current_state.split(":")[-1]
     text = message.text.strip()
 
-    # Валидация
+    integer_fields = {"age", "weight_reminder_days"}
     if field in OPTIONS:
         if text not in OPTIONS[field]:
             await message.answer("Выбери один из вариантов на кнопках.")
@@ -241,7 +257,7 @@ async def receive_answer(
         value = text
     else:
         try:
-            if field == "age":
+            if field in integer_fields:
                 value = int(text)
             elif field == "daily_budget":
                 value = float(text.replace(",", "."))
@@ -252,7 +268,7 @@ async def receive_answer(
                 value = float(text.replace(",", "."))
         except ValueError:
             await message.answer(
-                "Введи целое число." if field == "age" else "Введи число, например 71 или 71,5."
+                "Введи целое число." if field in integer_fields else "Введи число, например 71 или 71,5."
             )
             return
 

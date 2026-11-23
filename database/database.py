@@ -1,7 +1,7 @@
 from pathlib import Path
 from sqlmodel import SQLModel, Field, create_engine
 from database import models
-from sqlalchemy import event
+from sqlalchemy import event, inspect
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -20,7 +20,15 @@ def enable_foreign_keys(dbapi_connection, connection_record):
     cursor.close()
 
 def create_db_and_tables():
-    SQLModel.metadata.create_all(engine)
+    with engine.begin() as connection:
+        connection.exec_driver_sql("BEGIN IMMEDIATE")
+        SQLModel.metadata.create_all(connection)
+        columns = inspect(connection).get_columns("profiles")
+        if all(column["name"] != "weight_reminder_days" for column in columns):
+            connection.exec_driver_sql(
+                "ALTER TABLE profiles ADD COLUMN weight_reminder_days INTEGER NOT NULL "
+                f"DEFAULT {models.DEFAULT_WEIGHT_REMINDER_DAYS}"
+            )
 
 if __name__ == "__main__":
     create_db_and_tables()

@@ -7,6 +7,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import SimpleEventIsolation
 from dotenv import load_dotenv
 
+from bot.keyboards.labels import normalize_button_input
 from bot.middlewares.db import DatabaseMiddleware
 
 from bot.handlers.start import router as start_router
@@ -37,6 +38,7 @@ async def main():
     create_db_and_tables()  # <-- ВЫЗОВ
 
     dispatcher = Dispatcher(events_isolation=SimpleEventIsolation())
+    dispatcher.message.outer_middleware(normalize_button_input)
     dispatcher.message.middleware(DatabaseMiddleware())
 
     # 3. Регистрируем роутеры.

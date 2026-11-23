@@ -1,15 +1,17 @@
 from aiogram import Router, F
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import Message, ReplyKeyboardMarkup
 from aiogram.fsm.context import FSMContext
+
+from bot.keyboards.labels import make_button
 
 router = Router()
 
 def get_workout_menu():
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="Записать тренировку")],
-            [KeyboardButton(text="Составить план")],
-            [KeyboardButton(text="В главное меню")],
+            [make_button("Записать тренировку")],
+            [make_button("Составить план")],
+            [make_button("В главное меню")],
         ],
         resize_keyboard=True,
     )
