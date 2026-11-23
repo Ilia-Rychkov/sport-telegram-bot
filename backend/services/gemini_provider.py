@@ -18,11 +18,11 @@ class GeminiProvider(IAIProvider):
         self.model = model
 
     async def generate_text(
-        self,
-        prompt: str,
-        temperature: float = 0.7,
-        max_tokens: int | None = None,
-        response_mime_type: str | None = None
+            self,
+            prompt: str,
+            temperature: float = 0.7,
+            max_tokens: int | None = None,
+            response_mime_type: str | None = None
     ) -> str | None:
         config = types.GenerateContentConfig(temperature=temperature)
         if max_tokens:
@@ -30,19 +30,30 @@ class GeminiProvider(IAIProvider):
         if response_mime_type:
             config.response_mime_type = response_mime_type
 
-        try:
-            response = await asyncio.wait_for(
-                self.client.aio.models.generate_content(
-                    model=self.model,
-                    contents=prompt,
-                    config=config
-                ),
-                timeout=30.0
-            )
-            return response.text
-        except asyncio.TimeoutError:
-            logger.error("Таймаут при запросе к Gemini")
-            return None
-        except Exception as e:
-            logger.error(f"Ошибка Gemini: {e}")
-            return None
+        # 3 попытки с паузой
+        for attempt in range(3):
+            try:
+                response = await asyncio.wait_for(
+                    self.client.aio.models.generate_content(
+                        model=self.model,
+                        contents=prompt,
+                        config=config
+                    ),
+                    timeout=60.0
+                )
+                return response.text
+            except asyncio.TimeoutError:
+                logger.warning(f"Таймаут (попытка {attempt + 1}/3)")
+                if attempt == 2:
+                    return None
+                await asyncio.sleep(3)
+            except Exception as e:
+                error_msg = str(e)
+                if "503" in error_msg or "UNAVAILABLE" in error_msg:
+                    logger.warning(f"Google перегружен (503). Попытка {attempt + 1}/3")
+                    if attempt == 2:
+                        return None
+                    await asyncio.sleep(5)  # Ждем 5 секунд перед повтором
+                else:
+                    logger.error(f"Ошибка Gemini: {e}")
+                    return None

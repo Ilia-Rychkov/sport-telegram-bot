@@ -5,6 +5,8 @@ from enum import Enum
 
 MIN_PROFILE_AGE = 10
 MAX_PROFILE_AGE = 100
+DEFAULT_WEIGHT_REMINDER_DAYS = 1
+MAX_WEIGHT_REMINDER_DAYS = 365
 
 
 class Goal(str, Enum):
@@ -59,6 +61,14 @@ class Profile(SQLModel, table=True):
 
     allergies: str = Field(default="")
     daily_budget: float | None = Field(default=None, ge=0)
+    weight_reminder_days: int = Field(
+        default=DEFAULT_WEIGHT_REMINDER_DAYS,
+        ge=1,
+        le=MAX_WEIGHT_REMINDER_DAYS,
+        sa_column_kwargs={"server_default": str(DEFAULT_WEIGHT_REMINDER_DAYS)},
+    )
+
+
 class Recipe(SQLModel, table=True):
     __tablename__ = "recipes"
 

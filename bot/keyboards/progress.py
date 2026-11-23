@@ -1,14 +1,16 @@
-from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import ReplyKeyboardMarkup
+
+from bot.keyboards.labels import make_button
 
 
 progress_menu = ReplyKeyboardMarkup(
     keyboard=[
         [
-            KeyboardButton(text="Записать вес"),
-            KeyboardButton(text="График веса"),
+            make_button("Записать вес"),
+            make_button("График веса"),
         ],
-        [KeyboardButton(text="История тренировок")],
-        [KeyboardButton(text="Главное меню")],
+        [make_button("История тренировок")],
+        [make_button("Главное меню")],
     ],
     resize_keyboard=True,
 )
@@ -25,14 +27,14 @@ PERIOD_OPTIONS = {
 period_menu = ReplyKeyboardMarkup(
     keyboard=[
         [
-            KeyboardButton(text="За неделю"),
-            KeyboardButton(text="За месяц"),
+            make_button("За неделю"),
+            make_button("За месяц"),
         ],
         [
-            KeyboardButton(text="За 3 месяца"),
-            KeyboardButton(text="За всё время"),
+            make_button("За 3 месяца"),
+            make_button("За всё время"),
         ],
-        [KeyboardButton(text="Главное меню")],
+        [make_button("Главное меню")],
     ],
     resize_keyboard=True,
 )

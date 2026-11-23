@@ -2,7 +2,7 @@ import logging
 from typing import Dict, Any, Optional
 
 from sqlmodel import Session, select
-from database.models import Profile as DBProfile, User
+from database.models import Profile as DBProfile, User, WeightEntry
 from backend.services.calculator import calculate_nutrition
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,8 @@ class ProfileService:
             "goal": db_profile.goal.value if db_profile.goal else None,
             "fitness": db_profile.fitness.value if db_profile.fitness else None,
             "allergies": db_profile.allergies or None,
-            "daily_budget": db_profile.daily_budget
+            "daily_budget": db_profile.daily_budget,
+            "weight_reminder_days": db_profile.weight_reminder_days,
         }
 
     def save_profile(self, telegram_id: int, profile_data: Dict[str, Any]) -> None:
@@ -53,8 +54,7 @@ class ProfileService:
         if not user:
             user = User(telegram_id=telegram_id)
             self.session.add(user)
-            self.session.commit()
-            self.session.refresh(user)
+            self.session.flush()
 
         db_profile = self.session.exec(select(DBProfile).where(DBProfile.user_id == user.id)).first()
         if not db_profile:
@@ -67,7 +67,14 @@ class ProfileService:
         if profile_data.get("age") is not None:
             db_profile.age = int(profile_data["age"])
         if profile_data.get("weight") is not None:
-            db_profile.weight = float(profile_data["weight"])
+            weight = float(profile_data["weight"])
+            if db_profile.weight is None:
+                existing_measurement = self.session.exec(
+                    select(WeightEntry.id).where(WeightEntry.user_id == user.id).limit(1)
+                ).first()
+                if existing_measurement is None:
+                    self.session.add(WeightEntry(user_id=user.id, weight=weight))
+            db_profile.weight = weight
         if profile_data.get("height") is not None:
             db_profile.height = float(profile_data["height"])
         if profile_data.get("activity") is not None:
@@ -80,6 +87,8 @@ class ProfileService:
             db_profile.allergies = profile_data["allergies"]
         if profile_data.get("daily_budget") is not None:
             db_profile.daily_budget = float(profile_data["daily_budget"])
+        if profile_data.get("weight_reminder_days") is not None:
+            db_profile.weight_reminder_days = int(profile_data["weight_reminder_days"])
 
         self.session.add(db_profile)
         self.session.commit()

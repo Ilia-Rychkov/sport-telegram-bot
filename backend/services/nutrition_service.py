@@ -1,13 +1,14 @@
 import logging
 import random
 from backend.services.interfaces.ai_provider import IAIProvider
+from backend.services.interfaces.nutrition_service import INutritionService
 
 logger = logging.getLogger(__name__)
 
 import random
 
 
-class NutritionService:
+class NutritionService(INutritionService):
     def __init__(self, ai_provider: IAIProvider):
         self.ai = ai_provider
 

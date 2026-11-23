@@ -1,7 +1,8 @@
 from sqlmodel import Session, select
 from database.models import User, WorkoutSession, ExerciseResult, Exercise
+from backend.services.interfaces.workout_service import IWorkoutService
 
-class WorkoutService:
+class WorkoutService(IWorkoutService):
     def __init__(self, session: Session):
         self.session = session
 
@@ -13,31 +14,46 @@ class WorkoutService:
             self.session.flush()
         return user
 
-    def save_full_workout(self, telegram_id: int, exercise_name: str, weight: float, sets: int, reps: int) -> None:
-        """Сохраняет тренировку и результат одной транзакцией."""
+    def save_workout_batch(self, telegram_id: int, exercises: list[dict], notes: str = "Запись через бота") -> int:
+        """
+        Сохраняет тренировку с несколькими упражнениями одной транзакцией.
+        Возвращает ID созданной сессии.
+        """
         try:
+            # 1. Создаем пользователя и сессию
             user = self._get_or_create_user(telegram_id)
-            workout = WorkoutSession(user_id=user.id, notes="Запись через бота")
+            workout = WorkoutSession(user_id=user.id, notes=notes)
             self.session.add(workout)
+            self.session.flush()  # Получаем workout.id
 
-            exercise = self.session.exec(select(Exercise).where(Exercise.name == exercise_name)).first()
-            if exercise is None:
-                exercise = Exercise(
-                    name=exercise_name,
-                    muscle_group="Не указано",
-                    technique="Описание появится позже",
-                )
-                self.session.add(exercise)
+            # 2. Для каждого упражнения добавляем результат
+            for ex in exercises:
+                exercise_name = ex.get("exercise")
+                if not exercise_name:
+                    continue
 
-            self.session.flush()
-            self.session.add(ExerciseResult(
-                session_id=workout.id,
-                exercise_id=exercise.id,
-                weight_kg=weight,
-                sets=sets,
-                reps=reps,
-            ))
+                exercise = self.session.exec(select(Exercise).where(Exercise.name == exercise_name)).first()
+                if exercise is None:
+                    exercise = Exercise(
+                        name=exercise_name,
+                        muscle_group="Не указано",
+                        technique="Описание появится позже",
+                    )
+                    self.session.add(exercise)
+                    self.session.flush()
+
+                self.session.add(ExerciseResult(
+                    session_id=workout.id,
+                    exercise_id=exercise.id,
+                    weight_kg=ex.get("weight") or 0.0,
+                    sets=ex.get("sets") or 1,
+                    reps=ex.get("reps") or 1,
+                ))
+
+            # 3. Сохраняем всё разом
             self.session.commit()
+            return workout.id
+
         except Exception:
             self.session.rollback()
             raise

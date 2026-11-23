@@ -10,6 +10,13 @@ from backend.services.workout_service import WorkoutService
 from backend.services.gemini_provider import GeminiProvider
 from backend.services.nutrition_service import NutritionService
 from backend.services.workout_parser_service import WorkoutParserService
+from backend.services.workout_generator_service import WorkoutGeneratorService
+
+from backend.services.interfaces.nutrition_service import INutritionService
+from backend.services.interfaces.workout_service import IWorkoutService
+from backend.services.interfaces.workout_parser_service import IWorkoutParserService
+from backend.services.interfaces.workout_generator_service import IWorkoutGeneratorService
+
 
 WORKER_URL = "https://geminishka.weity-deadliner.workers.dev"
 MODEL = "gemini-3.5-flash-lite"
@@ -19,7 +26,7 @@ class DatabaseMiddleware(BaseMiddleware):
     async def __call__(self, handler, event, data):
         with Session(engine) as session:
             profile_service = ProfileService(session)
-            workout_service = WorkoutService(session)
+            workout_service: IWorkoutService = WorkoutService(session)
 
             # ВОТ ЗДЕСЬ ИСПРАВЬ:
             ai_provider = GeminiProvider(
@@ -27,9 +34,11 @@ class DatabaseMiddleware(BaseMiddleware):
                 base_url=WORKER_URL,
                 model=MODEL
             )
-            nutrition_service = NutritionService(ai_provider)
-            workout_parser = WorkoutParserService(ai_provider)
+            nutrition_service: INutritionService = NutritionService(ai_provider)
+            workout_parser: IWorkoutParserService = WorkoutParserService(ai_provider)
+            workout_generator: IWorkoutGeneratorService = WorkoutGeneratorService(ai_provider)
 
+            data["workout_generator"] = workout_generator
             data["profile_service"] = profile_service
             data["workout_service"] = workout_service
             data["nutrition_service"] = nutrition_service
