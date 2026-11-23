@@ -69,18 +69,6 @@ class Profile(SQLModel, table=True):
     )
 
 
-class Recipe(SQLModel, table=True):
-    __tablename__ = "recipes"
-
-    id: int | None = Field(default=None, primary_key=True)
-    name: str = Field(index=True)
-    ingredients: str
-    instructions: str
-
-    calories: float = Field(ge=0)
-    protein: float = Field(ge=0)
-    fat: float = Field(ge=0)
-    carbs: float = Field(ge=0)
 class Exercise(SQLModel, table=True):
     __tablename__ = "exercises"
 
