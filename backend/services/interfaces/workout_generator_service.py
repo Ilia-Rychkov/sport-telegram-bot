@@ -1,5 +1,11 @@
 from abc import ABC, abstractmethod
-from typing import List, Dict, Optional
+from typing import List, Dict, TypedDict
+
+
+class PlannedExercise(TypedDict):
+    name: str
+    instructions: str
+
 
 class IWorkoutGeneratorService(ABC):
     @abstractmethod
@@ -10,6 +16,6 @@ class IWorkoutGeneratorService(ABC):
         equipment: List[str] | None,
         muscle_group: str,
         history: List[Dict]
-    ) -> Optional[str]:
+    ) -> list[PlannedExercise] | None:
         """Генерирует план тренировки на основе профиля и истории."""
         pass

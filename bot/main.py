@@ -39,7 +39,9 @@ async def main():
 
     dispatcher = Dispatcher(events_isolation=SimpleEventIsolation())
     dispatcher.message.outer_middleware(normalize_button_input)
-    dispatcher.message.middleware(DatabaseMiddleware())
+    database_middleware = DatabaseMiddleware()
+    dispatcher.message.middleware(database_middleware)
+    workout_plan_router.callback_query.middleware(database_middleware)
 
     # 3. Регистрируем роутеры.
     dispatcher.include_router(start_router)

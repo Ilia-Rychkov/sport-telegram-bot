@@ -34,7 +34,7 @@ async def start_workout_record(message: Message, state: FSMContext):
     await message.answer(
         "🏋️ Расскажи, что сделал на тренировке.\n"
         "Можешь написать всё сразу, например:\n"
-        "«Жим лежа 50 кг 3х10, приседания 80 кг 4х8, отжимания 3х15»",
+        "«Жим лёжа 50 кг, 3 подхода по 10 повторений»",
         reply_markup=make_keyboard(["Отмена"]),
     )
 
@@ -73,7 +73,7 @@ async def process_natural_text(
     ):
         await thinking_msg.edit_text(
             "🤔 Не совсем понял. Попробуй написать так:\n"
-            "«Жим лежа 50 кг 3х10, приседания 80 кг 4х8»"
+            "«Жим лёжа 50 кг, 3 подхода по 10 повторений»"
         )
         return
 

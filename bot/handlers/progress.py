@@ -258,6 +258,9 @@ async def show_workout_history(
                 f"{exercise['reps']} повт."
             )
 
+        for exercise in session.get("feedback", []):
+            lines.append(f"• {exercise['name']}: {exercise['rating']}")
+
         # Разбиваем длинный текст, чтобы уложиться в лимит Telegram.
         text = "\n".join(lines)
         for start in range(0, len(text), 4000):

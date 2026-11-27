@@ -46,6 +46,7 @@ class ProfileService:
             "fitness": db_profile.fitness.value if db_profile.fitness else None,
             "allergies": db_profile.allergies or None,
             "daily_budget": db_profile.daily_budget,
+            "training_assessment": db_profile.training_assessment,
             "weight_reminder_days": db_profile.weight_reminder_days,
         }
 
@@ -87,6 +88,8 @@ class ProfileService:
             db_profile.allergies = profile_data["allergies"]
         if profile_data.get("daily_budget") is not None:
             db_profile.daily_budget = float(profile_data["daily_budget"])
+        if profile_data.get("training_assessment") is not None:
+            db_profile.training_assessment = profile_data["training_assessment"]
         if profile_data.get("weight_reminder_days") is not None:
             db_profile.weight_reminder_days = int(profile_data["weight_reminder_days"])
 

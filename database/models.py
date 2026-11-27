@@ -1,6 +1,7 @@
 from sqlmodel import Field, SQLModel
 from datetime import datetime, timezone
 from enum import Enum
+from sqlalchemy import JSON
 
 
 MIN_PROFILE_AGE = 10
@@ -61,6 +62,7 @@ class Profile(SQLModel, table=True):
 
     allergies: str = Field(default="")
     daily_budget: float | None = Field(default=None, ge=0)
+    training_assessment: dict | None = Field(default=None, sa_type=JSON)
     weight_reminder_days: int = Field(
         default=DEFAULT_WEIGHT_REMINDER_DAYS,
         ge=1,
@@ -125,6 +127,17 @@ class ExerciseResult(SQLModel, table=True):
     weight_kg: float = Field(ge=0)
     sets: int = Field(ge=1)
     reps: int = Field(ge=1)
+
+
+class ExerciseFeedback(SQLModel, table=True):
+    __tablename__ = "exercise_feedback"
+
+    workout_key: str = Field(primary_key=True)
+    position: int = Field(primary_key=True)
+    session_id: int = Field(foreign_key="workout_sessions.id", index=True)
+    exercise_name: str
+    instructions: str
+    rating: str
 
 
 class WeightEntry(SQLModel, table=True):
