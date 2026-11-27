@@ -1,5 +1,6 @@
 from io import BytesIO
 from threading import Lock
+from zoneinfo import ZoneInfo
 
 import matplotlib.dates as mdates
 from matplotlib.backends.backend_agg import FigureCanvasAgg
@@ -9,6 +10,7 @@ from database.models import WeightEntry
 
 
 _chart_lock = Lock()
+MOSCOW_TIMEZONE = ZoneInfo("Europe/Moscow")
 
 
 def build_weight_chart(
@@ -36,14 +38,14 @@ def build_weight_chart(
         )
 
         axes.set_title(f"Изменение веса — {period_label}")
-        axes.set_xlabel("Дата и время (UTC)")
+        axes.set_xlabel("Дата и время (МСК)")
         axes.set_ylabel("Вес, кг")
         axes.grid(alpha=0.3)
 
-        locator = mdates.AutoDateLocator()
+        locator = mdates.AutoDateLocator(tz=MOSCOW_TIMEZONE)
         axes.xaxis.set_major_locator(locator)
         axes.xaxis.set_major_formatter(
-            mdates.ConciseDateFormatter(locator)
+            mdates.ConciseDateFormatter(locator, tz=MOSCOW_TIMEZONE)
         )
 
         if len(entries) == 1:
